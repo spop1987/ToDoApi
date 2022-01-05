@@ -22,13 +22,19 @@ namespace ToDo.Api.Controllers
         private readonly JwtConfig _jwtConfig;
         private readonly TokenValidationParameters _tokenValidationParams;
         private readonly ApiDbContext _apiDbContext;
+        private readonly RoleManager<IdentityRole> _roleManager;
+        private readonly ILogger<AuthManagementController> _logger;
         public AuthManagementController(UserManager<IdentityUser> userManager,
+                                        RoleManager<IdentityRole> roleManager,
                                         IOptionsMonitor<JwtConfig> optionsMonitor,
+                                        ILogger<AuthManagementController> logger,
                                         TokenValidationParameters tokenValidationParams,
                                         ApiDbContext apiDbContext)
         {
             _userManager = userManager;
+            _roleManager = roleManager;
             _jwtConfig = optionsMonitor.CurrentValue;
+            _logger = logger;
             _tokenValidationParams = tokenValidationParams;
             _apiDbContext = apiDbContext;
         }
@@ -51,6 +57,8 @@ namespace ToDo.Api.Controllers
                 };
                 var isCreated = await _userManager.CreateAsync(newUser, user.Password);
                 if(isCreated.Succeeded){
+                    // We need to add the user to a role
+                    await _userManager.AddToRoleAsync(newUser, "AppUser");
                     var jwtToken = await GenerateJwtToken(newUser);
                     return Ok(jwtToken);
                 }else{
@@ -111,13 +119,9 @@ namespace ToDo.Api.Controllers
         {
             var jwtTokenHandler = new JwtSecurityTokenHandler();
             var key = Encoding.ASCII.GetBytes(_jwtConfig.Secret);
+            var claims = await GetAllValidClaims(user);
             var tokenDescriptor = new SecurityTokenDescriptor{
-                Subject = new ClaimsIdentity(new []{
-                    new Claim("Id", user.Id),
-                    new Claim(JwtRegisteredClaimNames.Email, user.Email),
-                    new Claim(JwtRegisteredClaimNames.Sub, user.Email),
-                    new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
-                }),
+                Subject = new ClaimsIdentity(claims),
                 Expires = DateTime.UtcNow.AddSeconds(30),
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
             };
@@ -140,6 +144,39 @@ namespace ToDo.Api.Controllers
 
             return GetAuthResult(token: jwtToken, refreshToken: refreshToken.Token, success: true);
         }
+
+        private async Task<List<Claim>> GetAllValidClaims(IdentityUser user)
+        {
+            // var _options = new IdentityOptions();
+            var claims = new List<Claim>{
+                new Claim("Id", user.Id),
+                new Claim(JwtRegisteredClaimNames.Email, user.Email),
+                new Claim(JwtRegisteredClaimNames.Sub, user.Email),
+                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+            };
+
+            var userClaims = await _userManager.GetClaimsAsync(user);
+            claims.AddRange(userClaims);
+
+            var userRoles = await _userManager.GetRolesAsync(user);
+
+            foreach (var userRole in userRoles)
+            {
+                var role = await _roleManager.FindByNameAsync(userRole);
+
+                if(role != null){
+                    claims.Add(new Claim(ClaimTypes.Role, userRole));
+                    var roleClaims = await _roleManager.GetClaimsAsync(role);
+                    foreach (var roleClaim in roleClaims)
+                    {
+                        claims.Add(roleClaim);
+                    }
+                }
+            }
+
+            return claims;
+        }
+
         private async Task<AuthResult> VerifyAndGenerateToken(TokenRequests tokenRequests)
         {
             var jwtTokenHandler = new JwtSecurityTokenHandler();

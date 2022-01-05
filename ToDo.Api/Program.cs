@@ -7,7 +7,6 @@ using Microsoft.OpenApi.Models;
 using ToDo.Api.Configuration;
 using ToDo.Api.Data;
 
-
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -37,13 +36,34 @@ builder.Services.AddAuthentication(options => {
     jwt.TokenValidationParameters = tokenValidationParams;
 });
 
-builder.Services.AddDefaultIdentity<IdentityUser>(opt => opt.SignIn.RequireConfirmedAccount = true)
+builder.Services.AddIdentity<IdentityUser, IdentityRole>(opt => opt.SignIn.RequireConfirmedAccount = true)
                 .AddEntityFrameworkStores<ApiDbContext>();
 
 builder.Services.AddControllers();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c => c.SwaggerDoc("v1", new OpenApiInfo {Title = "TodoApp", Version = "v1"}));
+builder.Services.AddSwaggerGen(c => 
+    {
+        c.SwaggerDoc("v1", new OpenApiInfo {Title = "TodoApp", Version = "v1"});
+        c.AddSecurityDefinition("BearerAuth", new OpenApiSecurityScheme
+        {
+            Type = SecuritySchemeType.Http,
+            Scheme = JwtBearerDefaults.AuthenticationScheme.ToLowerInvariant(),
+            In = ParameterLocation.Header,
+            Name = "Authorization",
+            BearerFormat = "JWT",
+            Description = "JWT Authorization header using the Bearer Sheme."
+        });
+        c.OperationFilter<AuthResponsesOperationFilter>();
+    });
+
+builder.Services.AddCors(options => {
+    options.AddPolicy("Open", builder => builder.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
+});
+
+builder.Services.AddAuthorization(options => {
+    options.AddPolicy("SchoolDepartment", policy => policy.RequireClaim("School Department"));
+});
 
 var app = builder.Build();
 

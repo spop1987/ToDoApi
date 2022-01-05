@@ -9,7 +9,7 @@ namespace ToDo.Api.Controllers
 {
     [Route("api/[controller]")] 
     [ApiController]
-    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme, Roles = "AppUser")]
     public class TodoController : ControllerBase
     {
         private readonly ApiDbContext _context;
@@ -26,6 +26,7 @@ namespace ToDo.Api.Controllers
         }
 
         [HttpPost]
+        [Authorize(Policy = "SchoolDepartment")]
         public async Task<IActionResult> PostItem(ItemData data)
         {
             if(ModelState.IsValid)
